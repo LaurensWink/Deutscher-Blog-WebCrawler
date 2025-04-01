@@ -19,11 +19,11 @@ def init_tags() -> list[Tag]:
 
     for tags_by_alphabetical_order in api_handler.get_all_tags().values():
         for tag in tags_by_alphabetical_order:
-            tag_list.append(Tag(tag['display_name']))
+            tag_list.append(Tag(name=tag['display_name']))
 
 
     for tag_name in web_crawler.get_tags(TAG_PAGE):
-        tag_list.append(Tag(tag_name))
+        tag_list.append(Tag(name=tag_name))
     
     return tag_list
 
@@ -73,10 +73,10 @@ def run_iterations(amount: int, initial_tags: list[Tag], initial_blogs_by_tag: d
 
 
 def main() -> None:
-    '''
+    
     tag_list: list[Tag] = init_tags()
     write_to_csv(dump_tag_list(tag_list), 'initial', 'tags')
-    '''
+    
     tag_list: list[Tag] = [Tag(name = tag) for tag in pd.read_csv('data/csv/initial/tags.csv')['tags']]
 
     blogs_by_tag: dict[str, list[Post]] = get_blog_posts_by_tag_list(tag_list)
