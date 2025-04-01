@@ -2,11 +2,10 @@ import asyncio
 
 from alive_progress import alive_it
 from loguru import logger
-from sqlalchemy import insert, text
+from sqlalchemy import insert
 from api_functions.api_handler import API_Handler
 from database.SQ_db import create_db_and_tables, engine
 from sqlmodel import Session, select
-from results import get_all_blogs
 from models.sql_models import Author, Blog, Post, Post_Tag, Tag
 from sqlalchemy import distinct
 
