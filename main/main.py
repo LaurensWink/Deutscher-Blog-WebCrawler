@@ -1,127 +1,97 @@
-import asyncio
-
-from alive_progress import alive_it
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import json
+import os
 from loguru import logger
-from sqlalchemy import insert, text
+import pandas as pd
 from api_functions.api_handler import API_Handler
-from database.SQ_db import create_db_and_tables, engine
-from sqlmodel import Session, select
-from results import get_all_blogs
-from models.sql_models import Author, Blog, Post, Post_Tag, Tag
-from sqlalchemy import distinct
+from api_functions.iteration import Iteration
+from models.base import Post, Tag
+from utility.constant_variables import TAG_PAGE 
+from utility.file_state_manager import write_to_csv, write_to_json, dump_blogs_by_tag, dump_tag_list
+from web_crawler.web_crawler import Web_Crawler
+
+api_handler = API_Handler()
+web_crawler = Web_Crawler()
+
+def init_tags() -> list[Tag]:
+    logger.info(f'Fetching for initial Tag-List')
+    tag_list: list[Tag] = []
+
+    for tags_by_alphabetical_order in api_handler.get_all_tags().values():
+        for tag in tags_by_alphabetical_order:
+            tag_list.append(Tag(tag['display_name']))
 
 
-async def fetch_initial_tags() -> None:
-    with Session(engine) as session:
-        tag_list: list[Tag] = await API_Handler().get_all_tags()
-        for tag in alive_it(tag_list):
-            session.exec(
-                insert(Tag).values(
-                    name=tag.name
-                ).prefix_with("OR IGNORE")
-            )
-        session.commit()
+    for tag_name in web_crawler.get_tags(TAG_PAGE):
+        tag_list.append(Tag(tag_name))
+    
+    return tag_list
+
+def get_blog_posts_by_tag_list(tags: list[Tag], num_threads: int = 8) -> dict[str, list[Post]]:
+    all_blog_posts_by_tag_list = {}
+
+    logger.info(f'Processing {len(tags)} tags with {num_threads} threads.')
+
+    with ThreadPoolExecutor(max_workers=num_threads) as executor:
+        future_to_tag = {executor.submit(tag.get_all_blog_posts): tag for tag in tags}
+
+        for future in as_completed(future_to_tag):
+            tag = future_to_tag[future]
+            try:
+                blog_posts = future.result()
+                all_blog_posts_by_tag_list[tag.name] = blog_posts
+            except Exception as e:
+                logger.error(f"Error processing tag {tag.name}: {e}")
+                all_blog_posts_by_tag_list[tag.name] = []
+
+    return all_blog_posts_by_tag_list
+
+def read_all_iteration_tags(directory: str = 'data/csv/iterations') -> list[Tag]:
+    if not os.path.exists(directory):
+        logger.error(f"Directory '{directory}' does not exist.")
+
+    iteration_tags: list[Tag] = []
+    for file in os.listdir(directory):
+        if file.endswith(".csv"):
+            file_path = os.path.join(directory, file)
+            try:
+                iteration_tags = iteration_tags + [Tag(name = tag) for tag in pd.read_csv(file_path)['tags']]
+            except Exception as e:
+                logger.error(f"Error while loading file {file}: {e}")
+    
+    return iteration_tags
+
+def run_iterations(amount: int, initial_tags: list[Tag], initial_blogs_by_tag: dict[str, list[Post]]) -> None:
+    current_blogs_by_tag = initial_blogs_by_tag
+    for iteration_count in range(amount):
+        total_tags: list[Tag] = initial_tags + read_all_iteration_tags()
+        iteration = Iteration(total_tags, current_blogs_by_tag, iteration_count)
+        write_to_csv(dump_tag_list(iteration.iteration_tag_list), 'iterations', f'iteration_{iteration_count}')
+        tag_list: list[Tag] = iteration.iteration_tag_list
+        del iteration
+        current_blogs_by_tag = get_blog_posts_by_tag_list(tag_list)
 
 
-def write_response_tupel(response_tupel_list: list[tuple[Post, Author, list[Tag]]]|None, session: Session) -> None:
-    for post_tuple in alive_it(response_tupel_list):
-        post, author, tag_list = post_tuple
+def main() -> None:
+    '''
+    tag_list: list[Tag] = init_tags()
+    write_to_csv(dump_tag_list(tag_list), 'initial', 'tags')
+    '''
+    tag_list: list[Tag] = [Tag(name = tag) for tag in pd.read_csv('data/csv/initial/tags.csv')['tags']]
 
-        if author:
-            session.exec(
-                insert(Author).values(
-                    ID=author.ID,
-                    name=author.name,
-                    profile_URL=author.profile_URL
-                ).prefix_with("OR IGNORE")
-            )
+    blogs_by_tag: dict[str, list[Post]] = get_blog_posts_by_tag_list(tag_list)
 
-            session.exec(
-                insert(Post).values(
-                    ID=post.ID,
-                    site_ID=post.site_ID,
-                    URL = post.URL,
-                    language= post.language,
-                    content= post.content,
-                    title= post.title,
-                    author_id = post.author_id 
-                ).prefix_with("OR IGNORE")
-            )
+    write_to_json(dump_blogs_by_tag(blogs_by_tag), 'initial', 'blog_posts')
 
-            for tag in tag_list:
-                session.exec(
-                    insert(Tag).values(
-                        name=tag.name
-                    ).prefix_with("OR IGNORE")
-                )
-               
-                session.exec(
-                    insert(Post_Tag).values(
-                        site_id = post.site_ID,
-                        post_id = post.ID,
-                        tag_name = tag.name
-                    ).prefix_with("OR IGNORE")
-                )
+    with open('data/json/initial/blog_posts.json') as file:
+        blogs_by_tag_json = json.load(file)
 
-async def iterate_unprocessed_tags() -> None:
-    with Session(engine) as session:
-        unprocessed_tags: list[Tag] = session.exec(select(Tag).where(Tag.processed == False)).fetchall()
-        
-        for unprocessed_tag in unprocessed_tags:
-            logger.info(f'Processing {unprocessed_tag.name}')
-            post_tuple_list: list[tuple[Post, Author, list[Tag]]]|None = await API_Handler().get_all_blog_posts_by_tag(tag=unprocessed_tag.name)
+    blogs_by_tag: dict[str, list[Post]] = {
+        tag: [Post(**post) for post in posts] 
+        for tag, posts in blogs_by_tag_json.items()
+    }
 
-            if post_tuple_list:
-                write_response_tupel(post_tuple_list, session)
+    run_iterations(10, tag_list, blogs_by_tag)
+    
 
-            unprocessed_tag.processed = True
-            session.commit()
-            logger.info(f'Processing of {unprocessed_tag.name} complete')
-
-async def iterate_unique_siteIDs() -> None:
-    with Session(engine) as session:
-        unique_site_IDs = session.exec(select(distinct(Post.site_ID))).all()
-        for site_ID in unique_site_IDs:
-            post_tuple_list: list[tuple[Post, Author, list[Tag]]]|None = await API_Handler().get_posts_by_blog(site_ID)
-            if post_tuple_list:
-                write_response_tupel(post_tuple_list, session)
-            blog: Blog = await API_Handler().get_blog(site_ID)
-            if blog:
-                session.exec(
-                    insert(Blog).values(
-                        site_ID = blog.site_ID,
-                        name = blog.name,
-                        description = blog.description,
-                        URL = blog.URL,
-                        access = blog.access
-                    ).prefix_with("OR IGNORE")
-                )
-            else:
-                session.exec(
-                    insert(Blog).values(
-                        site_ID = site_ID,
-                        name = None,
-                        description = None,
-                        URL = None,
-                        access = False
-                    ).prefix_with("OR IGNORE")
-                )
-            session.commit()
-
-def validate_licences() -> None:
-    with Session(engine) as session:
-        statement = select(Blog)
-        all_blogs = session.exec(statement).all()
-        for blog in all_blogs:
-            blog.cc_licence = blog.validate_licence() 
-            session.commit()
-        logger.info("Exit validate function")
-
-if __name__ == "__main__":
-    ITERATIONS: int = 50
-    create_db_and_tables()
-    asyncio.run(fetch_initial_tags())
-    for count in range(ITERATIONS):
-        asyncio.run(iterate_unprocessed_tags())
-    asyncio.run(iterate_unique_siteIDs())
-    validate_licences()
+main()

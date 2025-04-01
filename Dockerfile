@@ -14,10 +14,11 @@ RUN pip install poetry
 RUN poetry config virtualenvs.create false && poetry install --no-interaction --no-ansi --no-root
 
 # Kopiere den gesamten Code ins Image
+COPY web_crawler /app/web_crawler
+COPY utility /app/utility
 COPY models /app/models
 COPY main /app/main
 COPY api_functions /app/api_functions
-COPY database   /app/database
 
 # Setze den Befehl zum Starten der Anwendung
 ENV PYTHONPATH=/app

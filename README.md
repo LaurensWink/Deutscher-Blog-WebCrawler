@@ -1,5 +1,3 @@
-This Project was created with poetry using python 3.11
-
 DOCKER PIPELINE
 1. docker build -t schniffelus/blog_crawler-image .
 2. docker push schniffelus/blog_crawler-image
@@ -9,7 +7,7 @@ DOCKER PIPELINE
 6. docker logs <ID>
 7. docker stop <ID>
 
-Or using docker compose file:
+Alternativ mit docker compose file:
 1. docker compose pull
 2. docker compose up -d
 3. docker compose down
