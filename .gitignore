@@ -1,0 +1,43 @@
+# Bytecode-Dateien von Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtuelle Umgebungen
+venv/
+.env
+.venv/
+
+# Poetry-spezifische Dateien
+poetry.lock
+
+# Cache- und Log-Dateien
+*.log
+*.cache/
+pip-wheel-metadata/
+*.egg-info/
+dist/
+build/
+site-packages/
+database/data/
+
+# Editor-spezifische Dateien
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+
+# Jupyter Notebook Checkpoints
+.ipynb_checkpoints/
+
+# Tests, Coverage und Debugging
+.coverage
+coverage.xml
+htmlcov/
+*.cover
+nosetests.xml
+pytest_cache/
+__pycache__/
+tox/

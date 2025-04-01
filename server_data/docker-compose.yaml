@@ -1,0 +1,14 @@
+services:
+  blog_crawler:
+    container_name: blog_crawler
+    image: schniffelus/blog_crawler-image
+    volumes:
+      - ./output:/app/database/data
+    deploy:
+      resources:
+        limits:
+          cpus: '8.0'
+          memory: 6G
+        reservations:
+          cpus: '8.0'
+          memory: 4G 
