@@ -77,7 +77,7 @@ def main() -> None:
     tag_list: list[Tag] = init_tags()
     write_to_csv(dump_tag_list(tag_list), 'initial', 'tags')
     
-    tag_list: list[Tag] = [Tag(name = tag) for tag in pd.read_csv('data/csv/initial/tags.csv')['tags']]
+    tag_list: list[Tag] = [Tag(name = tag) for tag in pd.read_csv('data/csv/initial/tags.csv')['tags']][:10]
 
     blogs_by_tag: dict[str, list[Post]] = get_blog_posts_by_tag_list(tag_list)
 
@@ -91,7 +91,7 @@ def main() -> None:
         for tag, posts in blogs_by_tag_json.items()
     }
 
-    run_iterations(10, tag_list, blogs_by_tag)
+    run_iterations(10, tag_list[:10], blogs_by_tag)
     
 
 main()
